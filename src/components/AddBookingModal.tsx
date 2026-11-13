@@ -23,7 +23,7 @@ import {
 import { ConfirmedBooking, SelectedSlot, CourtId, PaymentVerificationStatus } from '../types';
 import { HOURLY_RANGES, BASE_PRICE_OFFPEAK, BASE_PRICE_PRIME } from '../data/mockData';
 import { buildCanonicalSlotId } from './EditBookingModal';
-import { uploadReceiptToFirebaseStorage, compressImageToBase64, fileToDataUrl, validateReceiptFile } from '../services/storageService';
+import { uploadReceiptToFirebaseStorage, validateReceiptFile } from '../services/storageService';
 import { saveBookingToFirestore, validateSlotsLiveAvailability } from '../services/bookingService';
 import { getTodayDateString, formatDateToFullReadable } from '../utils/dateUtils';
 
@@ -244,7 +244,12 @@ export const AddBookingModal: React.FC<AddBookingModalProps> = ({
     setErrorMessage(null);
 
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file preview.'));
+        reader.readAsDataURL(file);
+      });
       setImagePreviewUrl(dataUrl);
     } catch (err) {
       console.warn('Error reading preview Data URL:', err);
@@ -304,19 +309,13 @@ export const AddBookingModal: React.FC<AddBookingModalProps> = ({
       // 2. Handle Payment Proof Upload (if file attached)
       let finalProofUrl = '';
       if (selectedFile) {
-        try {
-          setUploadProgress(15);
-          const uploadRes = await uploadReceiptToFirebaseStorage(
-            selectedFile,
-            bookingRef,
-            (pct) => setUploadProgress(Math.round(pct))
-          );
-          finalProofUrl = uploadRes.downloadUrl;
-        } catch (storageErr) {
-          console.warn('Direct Firebase Storage upload encountered issue, applying compressed Base64 fallback:', storageErr);
-          const compressed = await compressImageToBase64(selectedFile);
-          finalProofUrl = compressed;
-        }
+        setUploadProgress(15);
+        const uploadRes = await uploadReceiptToFirebaseStorage(
+          selectedFile,
+          bookingRef,
+          (pct) => setUploadProgress(Math.round(pct))
+        );
+        finalProofUrl = uploadRes.downloadUrl;
       }
 
       // 3. Prepare normalized slots

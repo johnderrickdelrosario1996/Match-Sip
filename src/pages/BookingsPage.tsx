@@ -54,7 +54,6 @@ interface BookingsPageProps {
   isLoadingBookings: boolean;
 }
 
-const ADMIN_PASSWORD = '0912';
 const AUTH_STORAGE_KEY = 'matchsip_admin_auth';
 const ADMIN_PIN_STORAGE_KEY = 'matchsip_admin_pin';
 
@@ -64,10 +63,10 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  // Authentication State with sessionStorage persistence
+  // Authentication State with sessionStorage persistence (requires stored verified PIN)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true';
+      return sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true' && Boolean(getStoredAdminPin());
     } catch {
       return false;
     }
@@ -79,6 +78,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
 
   const [isLoadingUnmasked, setIsLoadingUnmasked] = useState<boolean>(false);
   const [isUnmaskedLoaded, setIsUnmaskedLoaded] = useState<boolean>(false);
+  const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
 
   const [pin, setPin] = useState('');
   const [isShaking, setIsShaking] = useState(false);
@@ -147,7 +147,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
   const handleSendTestEmail = async () => {
     setIsSendingTestEmail(true);
     try {
-      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || ADMIN_PASSWORD).trim();
+      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || '').trim();
       const res = await fetch('/api/test-email', {
         method: 'POST',
         headers: {
@@ -168,30 +168,53 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
   };
 
   // ---------------------------------------------------------
-  // FORMAL PIN AUTHENTICATION HANDLERS
+  // FORMAL PIN AUTHENTICATION HANDLERS (Verified Server-Side via .env ADMIN_PIN)
   // ---------------------------------------------------------
-  const verifyPin = (candidatePin: string) => {
+  const verifyPin = async (candidatePin: string) => {
     const cleanPin = candidatePin.trim();
-    if (cleanPin === ADMIN_PASSWORD) {
-      try {
-        sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
-        sessionStorage.setItem(ADMIN_PIN_STORAGE_KEY, cleanPin);
-      } catch (err) {
-        console.error('Failed to write to sessionStorage:', err);
+    if (!cleanPin || isVerifyingPin) return;
+
+    setIsVerifyingPin(true);
+    setAuthError(null);
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: cleanPin }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.verified) {
+        try {
+          sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+          sessionStorage.setItem(ADMIN_PIN_STORAGE_KEY, cleanPin);
+        } catch (err) {
+          console.error('Failed to write to sessionStorage:', err);
+        }
+        setActiveAdminPin(cleanPin);
+        setIsAuthenticated(true);
+        setPin('');
+        setAuthError(null);
+        showNotification('Access granted. Fetching full unmasked bookings...');
+      } else {
+        setIsShaking(true);
+        setAuthError(data.error || 'Incorrect PIN. Please try again.');
+        setTimeout(() => {
+          setPin('');
+          setIsShaking(false);
+          pinInputRef.current?.focus();
+        }, 550);
       }
-      setActiveAdminPin(cleanPin);
-      setIsAuthenticated(true);
-      setPin('');
-      setAuthError(null);
-      showNotification('Access granted. Fetching full unmasked bookings...');
-    } else {
+    } catch (err: any) {
       setIsShaking(true);
-      setAuthError('Incorrect PIN. Please try again.');
+      setAuthError(err?.message || 'Unable to verify PIN. Please check your connection.');
       setTimeout(() => {
         setPin('');
         setIsShaking(false);
         pinInputRef.current?.focus();
       }, 550);
+    } finally {
+      setIsVerifyingPin(false);
     }
   };
 
@@ -218,7 +241,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
     }
     setIsAuthenticated(false);
     setIsUnmaskedLoaded(false);
-    setActiveAdminPin(ADMIN_PASSWORD);
+    setActiveAdminPin('');
     setPin('');
     setAuthError(null);
     showNotification('Session locked. Admin PIN required.');
@@ -229,7 +252,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
     if (!isAuthenticated) return;
     if (!silent) setIsLoadingUnmasked(true);
     try {
-      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || ADMIN_PASSWORD).trim();
+      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || '').trim();
       const unmasked = await fetchUnmaskedAdminBookings(pinToUse, 100, 1, forceRefresh);
       setLocalBookings(unmasked);
       setIsUnmaskedLoaded(true);
@@ -259,7 +282,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
     setIsLoadingReceipt(true);
     setReceiptImageUrl(null);
     try {
-      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || ADMIN_PASSWORD).trim();
+      const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || '').trim();
       const idOrRef = booking.bookingReference || booking.id || '';
       const proofUrl = await fetchBookingReceipt(idOrRef, pinToUse);
       if (proofUrl) {
@@ -285,8 +308,13 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
   useEffect(() => {
     if (!isAuthenticated) return;
 
+    const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || '').trim();
+    if (!pinToUse) {
+      handleLogout();
+      return;
+    }
+
     setIsLoadingUnmasked(true);
-    const pinToUse = (activeAdminPin || sessionStorage.getItem(ADMIN_PIN_STORAGE_KEY) || ADMIN_PASSWORD).trim();
     const unsubscribe = subscribeToBookings(
       (unmaskedBookings) => {
         setLocalBookings(unmaskedBookings);
@@ -731,9 +759,10 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({
             <button
               type="submit"
               id="admin-pin-unlock-btn"
-              className="w-full rounded-xl bg-[#00C6FF] py-4 text-center font-heading text-base sm:text-lg font-black uppercase tracking-wider text-black shadow-lg shadow-[#00C6FF]/20 transition-all hover:bg-[#00C6FF]/90 active:scale-[0.99] cursor-pointer"
+              disabled={isVerifyingPin}
+              className="w-full rounded-xl bg-[#00C6FF] py-4 text-center font-heading text-base sm:text-lg font-black uppercase tracking-wider text-black shadow-lg shadow-[#00C6FF]/20 transition-all hover:bg-[#00C6FF]/90 active:scale-[0.99] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              UNLOCK
+              {isVerifyingPin ? 'VERIFYING...' : 'UNLOCK'}
             </button>
           </form>
         </div>

@@ -14,7 +14,7 @@ export function getStoredAdminPin(): string {
       if (pin && pin.trim()) return pin.trim();
     }
   } catch {}
-  return '0912';
+  return '';
 }
 
 /**

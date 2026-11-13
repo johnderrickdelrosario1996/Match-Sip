@@ -17,7 +17,7 @@ import {
 import { SelectedSlot, ConfirmedBooking } from '../types';
 import qrCodeImg from '../assets/images/INSTAPAY QR CODE.jpg';
 import paddleUpImg from '../assets/images/Paddleup.jpg';
-import { uploadReceiptToFirebaseStorage, compressImageToBase64, validateReceiptFile } from '../services/storageService';
+import { uploadReceiptToFirebaseStorage, validateReceiptFile } from '../services/storageService';
 import { validateSlotsLiveAvailability, holdSlotsLive, releaseSlotsHoldLive } from '../services/bookingService';
 import { getTodayDateString } from '../utils/dateUtils';
 
@@ -236,7 +236,6 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
   const [storageDownloadUrl, setStorageDownloadUrl] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
-  const [isFallbackBase64, setIsFallbackBase64] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -272,7 +271,7 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
   // Validation flags for requiring fields before booking is clickable
   const isNameFilled = fullName.trim().length > 0;
   const isPhoneFilled = phoneNumber.trim().replace(/\D/g, '').length === 10;
-  const isProofUploaded = Boolean((proofImage || storageDownloadUrl) && !isUploadingProof);
+  const isProofUploaded = Boolean(storageDownloadUrl && !isUploadingProof && !uploadError);
   const isFormValid = Boolean(
     selectedSlots.length > 0 &&
     isNameFilled &&
@@ -290,48 +289,33 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
   };
 
   /**
-   * Upload the selected photo file using optimized client compression and reliable server-backed storage.
-   * If any network error or stall occurs, automatically falls back to an optimized compressed
-   * Base64 string and attaches it to the reservation state.
+   * Upload the selected photo file directly to Supabase Storage.
    */
   const uploadFileToStorage = async (file: File) => {
     setIsUploadingProof(true);
     setUploadProgress(0);
     setUploadError(null);
-    setIsFallbackBase64(false);
 
     try {
-      const tempRef = `MS-${Math.floor(100000 + Math.random() * 900000)}`;
-      const result = await uploadReceiptToFirebaseStorage(file, tempRef, (percent) => {
+      const bookingRef = draftBookingRef || generateBookingReference();
+      const result = await uploadReceiptToFirebaseStorage(file, bookingRef, (percent) => {
         setUploadProgress(percent);
       });
 
-      // Successfully processed and uploaded receipt
+      // Successfully uploaded receipt to Supabase Storage
       setStorageDownloadUrl(result.downloadUrl);
       setProofImage(result.downloadUrl);
       setIsUploadingProof(false);
-      setIsFallbackBase64(false);
       setUploadError(null);
       setErrorMessage(null);
     } catch (err: any) {
-      console.warn('Receipt processing note, checking fallback:', err?.message);
-
-      try {
-        // Automatically compress image into optimized Base64 and attach to reservation state
-        const compressedBase64 = await compressImageToBase64(file);
-        setStorageDownloadUrl(compressedBase64);
-        setProofImage(compressedBase64);
-        setIsFallbackBase64(true);
-        setIsUploadingProof(false);
-        setUploadError(null);
-        setErrorMessage(null);
-      } catch (fallbackErr: any) {
-        setIsUploadingProof(false);
-        const friendlyMessage =
-          fallbackErr?.message || err?.message || 'Unable to process receipt image. Please choose another screenshot.';
-        setUploadError(friendlyMessage);
-        setErrorMessage(friendlyMessage);
-      }
+      console.error('Receipt upload failed:', err?.message || err);
+      setStorageDownloadUrl(null);
+      setIsUploadingProof(false);
+      const friendlyMessage =
+        err?.message || 'Unable to upload receipt image. Please check your connection and try again.';
+      setUploadError(friendlyMessage);
+      setErrorMessage(friendlyMessage);
     }
   };
 
@@ -392,7 +376,6 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
     setStorageDownloadUrl(null);
     setCurrentFile(null);
     setIsUploadingProof(false);
-    setIsFallbackBase64(false);
     setUploadProgress(0);
     setUploadError(null);
     if (fileInputRef.current) {
@@ -425,7 +408,7 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
       return;
     }
 
-    if (!storageDownloadUrl && !proofImage) {
+    if (!storageDownloadUrl && !currentFile) {
       setErrorMessage('Please upload your InstaPay payment screenshot proof.');
       return;
     }
@@ -462,28 +445,20 @@ export const RapidCheckout: React.FC<RapidCheckoutProps> = ({
         return;
       }
 
-      // Ensure we have the payment proof URL (Storage download URL or verified compressed Base64)
-      let finalProofUrl = storageDownloadUrl || proofImage;
+      const bookingRef = draftBookingRef || generateBookingReference();
+
+      // Ensure we have the uploaded Supabase Storage URL
+      let finalProofUrl = storageDownloadUrl;
       if (!finalProofUrl && currentFile) {
-        try {
-          const uploadResult = await uploadReceiptToFirebaseStorage(currentFile);
-          finalProofUrl = uploadResult.downloadUrl;
-          setStorageDownloadUrl(finalProofUrl);
-        } catch (uploadErr) {
-          console.warn('Firebase Storage upload failed on submit, converting to compressed Base64 fallback:', uploadErr);
-          const compressed = await compressImageToBase64(currentFile);
-          finalProofUrl = compressed;
-          setProofImage(compressed);
-          setStorageDownloadUrl(compressed);
-          setIsFallbackBase64(true);
-        }
+        const uploadResult = await uploadReceiptToFirebaseStorage(currentFile, bookingRef);
+        finalProofUrl = uploadResult.downloadUrl;
+        setStorageDownloadUrl(finalProofUrl);
+        setProofImage(finalProofUrl);
       }
 
       if (!finalProofUrl) {
         throw new Error('Payment receipt screenshot proof is required.');
       }
-
-      const bookingRef = draftBookingRef || `MS-${Math.floor(100000 + Math.random() * 900000)}`;
       const nowIso = new Date().toISOString();
       const newBooking: ConfirmedBooking = {
         bookingReference: bookingRef,

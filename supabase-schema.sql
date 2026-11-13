@@ -210,6 +210,24 @@ CREATE POLICY "Public access for users" ON public.users FOR ALL USING (true) WIT
 DROP POLICY IF EXISTS "Public access for app_settings" ON public.app_settings;
 CREATE POLICY "Public access for app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
 
+-- 7. Supabase Storage RLS Policies for private 'uploads' bucket (receipts/*)
+-- Allows the web client (anon key) to upload payment receipts and generate signed URLs.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('uploads', 'uploads', false)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Allow public receipt uploads" ON storage.objects;
+CREATE POLICY "Allow public receipt uploads"
+ON storage.objects FOR INSERT
+TO anon, authenticated
+WITH CHECK (bucket_id = 'uploads' AND (storage.foldername(name))[1] = 'receipts');
+
+DROP POLICY IF EXISTS "Allow public receipt signed url reads" ON storage.objects;
+CREATE POLICY "Allow public receipt signed url reads"
+ON storage.objects FOR SELECT
+TO anon, authenticated
+USING (bucket_id = 'uploads' AND (storage.foldername(name))[1] = 'receipts');
+
 -- Refresh PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
 

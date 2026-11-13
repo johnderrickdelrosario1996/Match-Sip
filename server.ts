@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './src/lib/loadEnv.ts';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -28,15 +28,20 @@ import {
 
 import {
   ADMIN_NOTIFICATION_EMAILS,
-  RESEND_API_KEY_OVERRIDE,
 } from './src/config/emailConfig.ts';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const ADMIN_PIN = (process.env.ADMIN_PIN || '0912').trim();
+const ADMIN_PIN = (process.env.ADMIN_PIN || '').trim();
 
 // Security middleware: Require valid Admin PIN header or query/body
 function requireAdminPin(req: Request, res: Response, next: NextFunction) {
+  if (!ADMIN_PIN) {
+    return res.status(500).json({
+      success: false,
+      error: 'Server configuration error: ADMIN_PIN is not configured in .env.',
+    });
+  }
   const headerPin = req.headers['x-admin-pin'] as string;
   const queryPin = (req.query.admin_pin as string) || (req.query.adminPin as string);
   const bodyPin = req.body?.adminPin || req.body?.pin;
@@ -82,9 +87,9 @@ if (ADMIN_EMAILS.length === 0) {
 
 const BUILD_TIME = Date.now();
 
-// Resend Email Client: checks direct config override first, then process.env
+// Resend Email Client: loaded strictly from server-side .env (RESEND_API_KEY)
 function getResendApiKey(): string | null {
-  const apiKey = (RESEND_API_KEY_OVERRIDE || process.env.RESEND_API_KEY || '').trim();
+  const apiKey = (process.env.RESEND_API_KEY || '').trim();
   return apiKey || null;
 }
 
@@ -120,10 +125,17 @@ app.post('/api/admin/verify', async (req: Request, res: Response) => {
     });
   }
 
+  if (!ADMIN_PIN) {
+    return res.status(500).json({
+      success: false,
+      error: 'Server configuration error: ADMIN_PIN is not configured in .env.',
+    });
+  }
+
   const { pin } = req.body || {};
   const cleanPin = (pin || '').trim();
 
-  if (cleanPin !== ADMIN_PIN) {
+  if (!cleanPin || cleanPin !== ADMIN_PIN) {
     const failure = recordPinFailure(ip);
     if (failure.locked) {
       return res.status(429).json({
@@ -208,7 +220,7 @@ app.get('/api/bookings', bookingsReadLimiter(180, 60000), async (req: Request, r
       (req.query.adminPin as string) ||
       ''
     ).trim();
-    const isAdmin = candidatePin === ADMIN_PIN;
+    const isAdmin = Boolean(ADMIN_PIN) && candidatePin === ADMIN_PIN;
 
     const { date, limit, page, offset } = req.query;
     const limitNum = typeof limit === 'string' ? Math.min(Math.max(1, parseInt(limit, 10) || 50), 100) : 50;
@@ -261,7 +273,7 @@ app.get('/api/bookings', bookingsReadLimiter(180, 60000), async (req: Request, r
     try {
       const limitNum = typeof req.query.limit === 'string' ? Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 100) : 50;
       const fallback = await getAllBookings({ limit: limitNum });
-      const isCandidateAdmin = (
+      const isCandidateAdmin = Boolean(ADMIN_PIN) && (
         (req.headers['x-admin-pin'] as string) ||
         (req.query.admin_pin as string) ||
         (req.query.adminPin as string) ||
@@ -705,7 +717,7 @@ async function dispatchNotificationEmail(
   const firstReason = failed[0]?.reason || 'Delivery failed';
   let friendlyError = firstReason;
   if (firstReason.includes('API key is invalid')) {
-    friendlyError = 'Invalid Resend API key. Please check your key in src/config/emailConfig.ts or RESEND_API_KEY env var.';
+    friendlyError = 'Invalid Resend API key. Please check RESEND_API_KEY in your .env file or secrets.';
   } else if (firstReason.includes('can only send testing emails') || firstReason.includes('onboarding@resend.dev')) {
     friendlyError = `Resend Free Sandbox: onboarding@resend.dev can only deliver to the verified Resend account owner (${allowedOwnerEmail || 'your Resend email'}). Verify a custom domain at resend.com/domains and set RESEND_FROM_EMAIL to send to other recipients.`;
   }
@@ -783,7 +795,7 @@ app.post(
       return res.status(400).json({
         success: false,
         error:
-          'RESEND_API_KEY is not configured. Please paste your Resend API key into src/config/emailConfig.ts or configure your secrets.',
+          'RESEND_API_KEY is not configured. Please add RESEND_API_KEY to your .env file or configure your secrets.',
       });
     }
 

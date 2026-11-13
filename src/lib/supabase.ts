@@ -25,7 +25,7 @@ const supabaseUrl =
   getEnvVar('NEXT_PUBLIC_SUPABASE_URL') ||
   getEnvVar('SUPABASE_URL') ||
   getEnvVar('VITE_SUPABASE_URL') ||
-  'https://aapkkyqqfsltljvvfbim.supabase.co';
+  '';
 
 const supabaseAnonKey =
   getEnvVar('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ||
@@ -33,7 +33,7 @@ const supabaseAnonKey =
   getEnvVar('SUPABASE_PUBLISHABLE_KEY') ||
   getEnvVar('SUPABASE_ANON_KEY') ||
   getEnvVar('VITE_SUPABASE_ANON_KEY') ||
-  'sb_publishable_6cAl8WIsrBuXrVoBeDeJEg_D1VBgHme';
+  '';
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -79,6 +79,9 @@ export function isNetworkOrConnectionError(error: any): boolean {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder-project.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key'
+);
 
 export default supabase;
