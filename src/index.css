@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+:root {
+  --font-heading: 'Outfit', system-ui, -apple-system, sans-serif;
+  --font-display: 'Syne', 'Outfit', sans-serif;
+  --font-black: 'Archivo Black', 'Outfit', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --color-primary: #5E2CB2;
+  --color-accent: #00C6FF;
+  --color-neutral: #FFFFFF;
+  --color-secondary: #B3A2DB;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-family: var(--font-sans);
+  background-color: #5E2CB2;
+  color: #FFFFFF;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: var(--font-heading);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-black-display {
+  font-family: var(--font-black);
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 26s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Custom scrollbar matching palette */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #5E2CB2;
+}
+::-webkit-scrollbar-thumb {
+  background: #B3A2DB;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00C6FF;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-10px); }
+  40%, 80% { transform: translateX(10px); }
+}
+
+.animate-shake {
+  animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Dynamic Blue Terminal Blinking Cursor */
+@keyframes terminalCursorBlink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+.animate-terminal-cursor {
+  animation: terminalCursorBlink 0.9s infinite;
+}
+

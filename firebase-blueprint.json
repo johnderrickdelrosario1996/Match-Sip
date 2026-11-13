@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "booking": {
+      "title": "Booking",
+      "description": "Court reservation booking at Match & Sip Pickleball",
+      "type": "object",
+      "properties": {
+        "bookingReference": { "type": "string" },
+        "selectedDate": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "customer": { "type": "object" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerNotes": { "type": "string" },
+        "slots": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "paymentProofUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "confirmedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "bookedAt": { "type": "string" }
+      },
+      "required": ["bookingReference", "selectedDate"]
+    },
+    "courtSlotLock": {
+      "title": "CourtSlotLock",
+      "description": "Deterministic court slot lock preventing double bookings",
+      "type": "object",
+      "properties": {
+        "lockId": { "type": "string" },
+        "bookingReference": { "type": "string" },
+        "customerName": { "type": "string" },
+        "date": { "type": "string" },
+        "courtId": { "type": "string" },
+        "courtName": { "type": "string" },
+        "timeLabel": { "type": "string" },
+        "status": { "type": "string" },
+        "lockedAt": { "type": "string" }
+      },
+      "required": ["lockId", "bookingReference", "date", "courtId"]
+    }
+  },
+  "firestore": {
+    "/bookings/{bookingId}": {
+      "schema": "#/entities/booking",
+      "description": "Public and administrative court reservations"
+    },
+    "/courtSlotLocks/{lockId}": {
+      "schema": "#/entities/courtSlotLock",
+      "description": "Atomic locks for individual court time slots"
+    }
+  }
+}

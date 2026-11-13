@@ -1,0 +1,8 @@
+{
+  "name": "MATCH&SIP",
+  "description": "Modern pickleball court booking service with instant court reservation, live time-slot matrix, and quick checkout.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
